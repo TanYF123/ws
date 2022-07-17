@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>webSocket</title>
+    <script src="js/jquery.js"></script>
+    <script src="js/sockjs.min.js"></script>
+    <script src="js/stomp.js"></script>
+    <script src="js/recorder3.js"></script>
+</head>
+<body>
+    <div>
+        <button id="connect">连接</button>
+        <button id="disconnect" disabled="disabled">断开</button>
+    </div>
+    <div>
+        <h3>广播形式</h3>
+        <button id="broadcastButton">发送</button><input id="broadcastText" type="text">
+        <label>广播消息：</label><input id="broadcastMsg" type="text" disabled="disabled">
+    </div>
+    <div>
+        <h3>订阅形式</h3>
+        <label>订阅消息：</label><input id="subscribeMsg" type="text" disabled="disabled">
+    </div>
+    <div>
+        <h3>角色形式</h3>
+        <button id="userButton">发送</button><input id="userText" type="text">
+        <label>用户消息：</label><input id="userMsg" type="text" disabled="disabled">
+    </div>
+    <div>
+        <h3>无APP</h3>
+        <button id="appButton">发送</button><input id="appText" type="text">
+        <label>前端消息：</label><input id="appMsg" type="text" disabled="disabled">
+    </div>
+
+    <div>
+        <h3>麦克风</h3>
+        <button id="mkfStart">启用</button>
+        <button id="mkfStop">停止</button>
+        <br>
+        <div style="padding-top: 10px">
+            <label>后端识别消息：</label><input id="mkfMsg" type="text" disabled="disabled"/>
+        </div>
+    </div>
+</body>
+<script>
+    var courtId;
+    var stomp = null;
+    $("#connect").click(function () {
+        var url = "http://localhost:8090/webSocket"
+        var socket = new SockJS(url);
+        stomp = Stomp.over(socket);
+        courtId = Date.now()
+        //连接
+        stomp.connect({}, function (frame) {
+            //订阅广播
+            stomp.subscribe("/topic/broadcast/"+courtId, function (res) {
+                $("#broadcastMsg").val(res.body);
+            });
+            //订阅，一般只有订阅的时候在返回
+            stomp.subscribe("/app/subscribe/1", function (res) {
+                $("#subscribeMsg").val(res.body);
+            });
+            //用户模式
+            stomp.subscribe("/user/queue/one", function (res) {
+                $("#userMsg").val(res.body);
+            });
+            //无APP
+            stomp.subscribe("/topic/app", function (res) {
+                $("#appMsg").val(res.body);
+            });
+            setConnect(true);
+        });
+    });
+
+    $("#disconnect").click(function () {
+        if (stomp != null) {
+            stomp.disconnect();
+        }
+        setConnect(false);
+    });
+    //设置按钮
+    function setConnect(connectStatus) {
+        $("#connect").attr("disabled", connectStatus);
+        $("#disconnect").attr("disabled", !connectStatus);
+    }
+
+    //发送广播消息
+    $("#broadcastButton").click(function () {
+        stomp.send("/app/broadcast/"+courtId, {}, JSON.stringify({"body":$("#broadcastText").val()}))
+    });
+
+    //发送用户消息
+    $("#userButton").click(function () {
+        stomp.send("/app/one", {}, JSON.stringify({"body":$("#userText").val()}))
+    });
+
+    //发送web消息
+    $("#appButton").click(function () {
+        stomp.send("/topic/app", {}, JSON.stringify({"body":$("#appText").val()}))
+    });
+
+
+    recorder = new Recorder({
+        sampleBits: 16,                 // 采样位数，支持 8 或 16，默认是16
+        sampleRate: 16000,              // 采样率，支持 11025、16000、22050、24000、44100、48000，根据浏览器默认值，
+        numChannels: 1,                 // 声道，支持 1 或 2， 默认是1
+        // compiling: false,(0.x版本中生效,1.x增加中)  // 是否边录边转换，默认是false
+        compiling: true,
+        type:"wav",   //此处的type类型是可修改的
+        bitRate:16,
+        bufferSize:8192
+    });
+
+    var interval; // 定时器
+
+    $("#mkfStart").click(function () {
+        console.info("record clicked.")
+        recorder.start().then(function (value) {
+            console.info("已启动")
+            interval = setInterval(function () {
+                // console.log({"bytes":new Uint8Array(recorder.getWAV().buffer),sessionId:"112321",role:"法官"})
+                stomp.send("/app/asr",{role:'法官',sessionId:'1234'},new Uint8Array(recorder.getWAV().buffer))
+            },500)
+        },function (reason) {
+            console.info("错误："+reason)
+        });
+    })
+
+    $("#mkfStop").click(function () {
+        recorder.stop()
+        clearInterval(interval)
+        console.info("麦克风已停止使用")
+    })
+
+
+
+</script>
+</html>
